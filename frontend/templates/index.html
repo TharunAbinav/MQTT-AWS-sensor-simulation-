@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AWS IoT Core — Live Telemetry Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans p-6">
+  <div class="max-w-6xl mx-auto space-y-6">
+    <!-- Header -->
+    <div class="flex flex-col md:flex-row md:items-center justify-between bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg">
+      <div>
+        <h1 class="text-2xl font-bold tracking-tight text-white">AWS IoT Core Wireless Telemetry Dashboard</h1>
+        <p class="text-sm text-slate-400 mt-1">Real-Time MQTT over TLS (Port 8883) &bull; Topic: <code id="topic-label" class="text-cyan-400">sensors/temperature</code></p>
+      </div>
+      <div class="mt-4 md:mt-0 flex items-center gap-3">
+        <span id="status-dot" class="w-3 h-3 rounded-full bg-amber-400 animate-pulse"></span>
+        <span id="status-text" class="text-sm font-medium text-slate-300">Connecting to AWS IoT...</span>
+      </div>
+    </div>
+
+    <!-- KPI Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg">
+        <p class="text-xs uppercase tracking-wider text-slate-400">Live Temperature</p>
+        <div class="mt-3 flex items-baseline gap-2">
+          <span id="temp-val" class="text-4xl font-extrabold text-orange-400">--</span>
+          <span class="text-lg text-slate-400">&deg;C</span>
+        </div>
+        <p id="device-id" class="text-xs text-slate-500 mt-3">Device: Waiting for data...</p>
+      </div>
+
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg">
+        <p class="text-xs uppercase tracking-wider text-slate-400">Live Humidity</p>
+        <div class="mt-3 flex items-baseline gap-2">
+          <span id="hum-val" class="text-4xl font-extrabold text-cyan-400">--</span>
+          <span class="text-lg text-slate-400">%</span>
+        </div>
+        <p id="msg-count" class="text-xs text-slate-500 mt-3">Packets received: 0</p>
+      </div>
+
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg">
+        <p class="text-xs uppercase tracking-wider text-slate-400">Last Telemetry Timestamp (UTC)</p>
+        <div class="mt-3">
+          <span id="ts-val" class="text-xl font-mono font-semibold text-emerald-400">--:--:--</span>
+        </div>
+        <p id="endpoint-label" class="text-xs text-slate-500 mt-4 truncate">Broker: AWS IoT Core</p>
+      </div>
+    </div>
+
+    <!-- Live Chart -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg">
+      <h2 class="text-base font-semibold text-white mb-4">Real-Time Sensor Stream (Temperature &amp; Humidity)</h2>
+      <div class="h-80">
+        <canvas id="telemetryChart"></canvas>
+      </div>
+    </div>
+
+    <!-- Recent Payloads Table -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg">
+      <h2 class="text-base font-semibold text-white mb-4">Recent MQTT JSON Payloads</h2>
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-sm text-slate-300">
+          <thead class="text-xs uppercase bg-slate-800/60 text-slate-400">
+            <tr>
+              <th class="py-3 px-4 rounded-l-lg">Timestamp (UTC)</th>
+              <th class="py-3 px-4">Device ID</th>
+              <th class="py-3 px-4">Temperature (&deg;C)</th>
+              <th class="py-3 px-4 rounded-r-lg">Humidity (%)</th>
+            </tr>
+          </thead>
+          <tbody id="payload-table" class="divide-y divide-slate-800 font-mono text-xs">
+            <tr><td colspan="4" class="py-4 text-center text-slate-500">Waiting for incoming MQTT packets...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const ctx = document.getElementById('telemetryChart').getContext('2d');
+    const chart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [
+          {
+            label: 'Temperature (°C)',
+            data: [],
+            borderColor: '#fb923c',
+            backgroundColor: 'rgba(251, 146, 60, 0.15)',
+            tension: 0.35,
+            fill: true
+          },
+          {
+            label: 'Humidity (%)',
+            data: [],
+            borderColor: '#22d3ee',
+            backgroundColor: 'rgba(34, 211, 238, 0.12)',
+            tension: 0.35,
+            fill: true
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } },
+          y: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' }, suggestedMin: 15, suggestedMax: 85 }
+        },
+        plugins: {
+          legend: { labels: { color: '#e2e8f0' } }
+        }
+      }
+    });
+
+    async function fetchTelemetry() {
+      try {
+        const res = await fetch('/api/telemetry');
+        const data = await res.json();
+
+        const dot = document.getElementById('status-dot');
+        const statusText = document.getElementById('status-text');
+        if (data.status.connected) {
+          dot.className = 'w-3 h-3 rounded-full bg-emerald-400';
+          statusText.textContent = 'Connected to AWS IoT Core (TLS 1.2)';
+        } else {
+          dot.className = 'w-3 h-3 rounded-full bg-rose-500';
+          statusText.textContent = data.status.last_error || 'Disconnected';
+        }
+
+        if (data.status.topic) document.getElementById('topic-label').textContent = data.status.topic;
+        if (data.status.endpoint) document.getElementById('endpoint-label').textContent = 'Broker: ' + data.status.endpoint;
+
+        if (data.latest) {
+          document.getElementById('temp-val').textContent = data.latest.temperature.toFixed(2);
+          document.getElementById('hum-val').textContent = data.latest.humidity.toFixed(2);
+          document.getElementById('ts-val').textContent = data.latest.ts;
+          document.getElementById('device-id').textContent = 'Device: ' + data.latest.deviceId;
+          document.getElementById('msg-count').textContent = 'Packets buffered: ' + data.history.length;
+
+          chart.data.labels = data.history.map(item => item.ts.replace('T', ' ').replace('Z', ''));
+          chart.data.datasets[0].data = data.history.map(item => item.temperature);
+          chart.data.datasets[1].data = data.history.map(item => item.humidity);
+          chart.update('none');
+
+          const tbody = document.getElementById('payload-table');
+          tbody.innerHTML = data.history.slice().reverse().slice(0, 8).map(item => `
+            <tr class="hover:bg-slate-800/40">
+              <td class="py-2.5 px-4 text-emerald-400">${item.ts}</td>
+              <td class="py-2.5 px-4">${item.deviceId}</td>
+              <td class="py-2.5 px-4 text-orange-400 font-semibold">${item.temperature.toFixed(2)} &deg;C</td>
+              <td class="py-2.5 px-4 text-cyan-400 font-semibold">${item.humidity.toFixed(2)} %</td>
+            </tr>
+          `).join('');
+        }
+      } catch (err) {
+        console.error('Error fetching telemetry:', err);
+      }
+    }
+
+    setInterval(fetchTelemetry, 2000);
+    fetchTelemetry();
+  </script>
+</body>
+</html>

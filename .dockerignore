@@ -1,0 +1,9 @@
+certs/
+.env
+.git/
+__pycache__/
+*.pyc
+venv/
+.venv/
+terraform/
+frontend/

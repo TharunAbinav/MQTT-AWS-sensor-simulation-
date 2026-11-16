@@ -1,0 +1,15 @@
+# NEVER commit AWS certificates, private keys, or Terraform state
+certs/*
+!certs/README.md
+*.pem
+*.pem.crt
+*.pem.key
+.env
+__pycache__/
+*.pyc
+venv/
+.venv/
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.backup
+terraform/.terraform.lock.hcl

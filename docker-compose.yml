@@ -1,0 +1,27 @@
+services:
+  iot-publisher:
+    build: .
+    container_name: iot-sensor-publisher
+    environment:
+      - AWS_IOT_ENDPOINT=${AWS_IOT_ENDPOINT:-a2ysgq4nuhlp7t-ats.iot.us-east-1.amazonaws.com}
+      - CLIENT_ID=MyDemoDevice
+      - TOPIC=sensors/temperature
+      - PUBLISH_INTERVAL=5
+    volumes:
+      - ./certs:/app/certs:ro
+    restart: unless-stopped
+
+  iot-dashboard:
+    build: ./frontend
+    container_name: iot-web-dashboard
+    ports:
+      - "5000:5000"
+    environment:
+      - AWS_IOT_ENDPOINT=${AWS_IOT_ENDPOINT:-a2ysgq4nuhlp7t-ats.iot.us-east-1.amazonaws.com}
+      - CLIENT_ID=MyDemoDevice
+      - DASHBOARD_CLIENT_ID=MyDemoDevice-Dashboard
+      - TOPIC=sensors/temperature
+      - CERT_DIR=/app/certs
+    volumes:
+      - ./certs:/app/certs:ro
+    restart: unless-stopped
